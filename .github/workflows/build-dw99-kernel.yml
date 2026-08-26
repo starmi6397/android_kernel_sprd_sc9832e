@@ -1,0 +1,87 @@
+name: Build DW99 Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      localversion:
+        description: 'Local version suffix (optional)'
+        required: false
+        default: '-dw99'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    env:
+      ARCH: arm64
+      CROSS_COMPILE: aarch64-linux-gnu-
+      CC: ccache aarch64-linux-gnu-gcc
+      DEFCONFIG: lineageos_dw99_defconfig
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: lineage-17.1
+
+      - name: Install dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential bc bison flex \
+            libssl-dev libncurses5-dev \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            u-boot-tools xz-utils ccache \
+            libstdc++6:i386 zlib1g:i386
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: dw99-kernel
+          max-size: 2G
+
+      - name: Generate .config
+        run: |
+          make $DEFCONFIG
+          
+          if [ -n "${{ inputs.localversion }}" ]; then
+            echo "CONFIG_LOCALVERSION=\"${{ inputs.localversion }}\"" >> .config
+          fi
+          
+          make olddefconfig
+
+      - name: Build kernel + DTB
+        run: |
+          make -j$(nproc)
+          make -j$(nproc) dtbs
+
+      - name: Build modules
+        run: |
+          make -j$(nproc) modules
+
+      - name: Prepare output
+        run: |
+          mkdir -p out
+          
+          # 内核镜像
+          cp -f arch/arm64/boot/Image out/
+          cp -f arch/arm64/boot/Image.gz out/
+          
+          # 设备树 (DW99)
+          find arch/arm64/boot/dts -name "*dw99*.dtb" -exec cp {} out/ \;
+          
+          # 调试文件
+          cp -f vmlinux out/
+          cp -f System.map out/
+          cp -f .config out/config
+          
+          echo "=== Output ==="
+          ls -lh out/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dw99-kernel-${{ github.run_number }}
+          path: out/*
