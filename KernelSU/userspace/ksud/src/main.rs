@@ -28,6 +28,8 @@ mod init_event;
 mod ksucalls;
 #[cfg(target_os = "android")]
 mod late_load;
+mod lkm_image;
+mod lkm_image_btf;
 #[cfg(target_os = "android")]
 mod magica;
 #[cfg(target_os = "android")]
@@ -46,6 +48,8 @@ mod restorecon;
 mod sepolicy;
 #[cfg(target_os = "android")]
 mod su;
+#[cfg(target_os = "android")]
+mod sulog;
 #[cfg(target_os = "android")]
 mod unload;
 #[cfg(target_os = "android")]

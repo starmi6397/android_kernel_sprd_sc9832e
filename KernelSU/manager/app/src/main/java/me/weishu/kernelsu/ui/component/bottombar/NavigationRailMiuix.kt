@@ -1,63 +1,62 @@
 package me.weishu.kernelsu.ui.component.bottombar
 
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
 import me.weishu.kernelsu.Natives
+import me.weishu.kernelsu.R
+import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.ui.LocalMainPagerState
-import me.weishu.kernelsu.ui.theme.LocalEnableBlur
-import me.weishu.kernelsu.ui.util.defaultHazeEffect
-import me.weishu.kernelsu.ui.util.rootAvailable
 import top.yukonga.miuix.kmp.basic.NavigationRail
 import top.yukonga.miuix.kmp.basic.NavigationRailItem
+import top.yukonga.miuix.kmp.basic.NavigationRailValue
+import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun NavigationRailMiuix(
-    hazeState: HazeState,
-    hazeStyle: HazeStyle,
+    navigationBadge: NavigationBadgeState,
     modifier: Modifier = Modifier,
 ) {
-    val isManager = Natives.isManager
-    val fullFeatured = isManager && !Natives.requireNewKernel() && rootAvailable()
+    val fullFeatured = Natives.isFullFeatured()
     if (!fullFeatured) return
 
     val mainState = LocalMainPagerState.current
-    val enableBlur = LocalEnableBlur.current
 
     val items = BottomBarDestination.entries.map { destination ->
         Pair(stringResource(destination.label), destination.icon)
     }
+    val settingsRepo = remember { SettingsRepositoryImpl() }
+    val state = rememberNavigationRailState(
+        initialValue = if (settingsRepo.navigationRailExpanded) {
+            NavigationRailValue.Expanded
+        } else {
+            NavigationRailValue.Collapsed
+        },
+    )
+    LaunchedEffect(state.currentValue) {
+        settingsRepo.navigationRailExpanded = state.isExpanded
+    }
 
     NavigationRail(
-        modifier = modifier
-            .fillMaxHeight()
-            .then(
-                if (enableBlur) {
-                    Modifier.defaultHazeEffect(hazeState, hazeStyle)
-                } else Modifier
-            ),
-        color = if (enableBlur) Color.Transparent else MiuixTheme.colorScheme.surface,
+        modifier = modifier,
+        state = state,
+        color = MiuixTheme.colorScheme.surface,
+        expandContentDescription = stringResource(R.string.nav_rail_expand),
+        collapseContentDescription = stringResource(R.string.nav_rail_collapse),
     ) {
-        Spacer(modifier = Modifier.weight(1f))
         items.forEachIndexed { index, (label, icon) ->
             NavigationRailItem(
-                icon = icon,
-                label = label,
                 selected = mainState.selectedPage == index,
                 onClick = {
                     mainState.animateToPage(index)
                 },
-                modifier = Modifier.padding(vertical = 4.dp)
+                icon = icon,
+                label = label,
+                badge = navigationBadgeFor(index, navigationBadge),
             )
         }
-        Spacer(modifier = Modifier.weight(1f))
     }
 }

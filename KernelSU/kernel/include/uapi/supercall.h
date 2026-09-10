@@ -1,6 +1,9 @@
 #ifndef __KSU_UAPI_SUPERCALL_H
 #define __KSU_UAPI_SUPERCALL_H
 
+// 4: add KSU_GET_INFO_FLAG_BUNDLED
+#define KERNEL_SU_UAPI_VERSION 4
+
 /* Magic numbers for reboot hook to install fd */
 #define KSU_INSTALL_MAGIC1 0xDEADBEEF
 #define KSU_INSTALL_MAGIC2 0xCAFEBABE
@@ -17,8 +20,16 @@ struct ksu_become_daemon_cmd {
 #define KSU_GET_INFO_FLAG_MANAGER (1U << 1)
 #define KSU_GET_INFO_FLAG_LATE_LOAD (1U << 2)
 #define KSU_GET_INFO_FLAG_PR_BUILD (1U << 3)
+#define KSU_GET_INFO_FLAG_BUNDLED (1U << 4)
 
 struct ksu_get_info_cmd {
+	__u32 version; /* Output: KERNEL_SU_VERSION */
+	__u32 flags; /* Output: KSU_GET_INFO_FLAG_* bits */
+	__u32 features; /* Output: max feature ID supported */
+	__u32 uapi_version; /* Output: KERNEL_SU_UAPI_VERSION */
+};
+
+struct ksu_get_info_legacy_cmd {
 	__u32 version; /* Output: KERNEL_SU_VERSION */
 	__u32 flags; /* Output: KSU_GET_INFO_FLAG_* bits */
 	__u32 features; /* Output: max feature ID supported */
@@ -125,13 +136,18 @@ struct ksu_add_try_umount_cmd {
 	__u8 mode; /* denotes what to do with it 0:wipe_list 1:add_to_list 2:delete_entry */
 };
 
+struct ksu_get_sulog_fd_cmd {
+	__u32 flags; /* Input: reserved for future use, must be 0 */
+};
+
 #define KSU_UMOUNT_WIPE 0	// ignore everything and wipe list
 #define KSU_UMOUNT_ADD 1	// add entry (path + flags)
 #define KSU_UMOUNT_DEL 2	// delete entry, strcmp
 
 // IOCTL command definitions
 #define KSU_IOCTL_GRANT_ROOT _IOC(_IOC_NONE, 'K', 1, 0)
-#define KSU_IOCTL_GET_INFO _IOC(_IOC_READ, 'K', 2, 0)
+#define KSU_IOCTL_GET_INFO _IOR('K', 2, struct ksu_get_info_cmd)
+#define KSU_IOCTL_GET_INFO_LEGACY _IOC(_IOC_READ, 'K', 2, 0)
 #define KSU_IOCTL_REPORT_EVENT _IOC(_IOC_WRITE, 'K', 3, 0)
 #define KSU_IOCTL_SET_SEPOLICY _IOC(_IOC_READ|_IOC_WRITE, 'K', 4, 0)
 #define KSU_IOCTL_CHECK_SAFEMODE _IOC(_IOC_READ, 'K', 5, 0)
@@ -153,5 +169,7 @@ struct ksu_add_try_umount_cmd {
 #define KSU_IOCTL_NUKE_EXT4_SYSFS _IOC(_IOC_WRITE, 'K', 17, 0)
 #define KSU_IOCTL_ADD_TRY_UMOUNT _IOC(_IOC_WRITE, 'K', 18, 0)
 #define KSU_IOCTL_SET_INIT_PGRP _IO('K', 19)
+#define KSU_IOCTL_GET_SULOG_FD _IOW('K', 20, struct ksu_get_sulog_fd_cmd)
+#define KSU_IOCTL_DISABLE_ESCAPE_TO_ROOT _IO('K', 21)
 
 #endif

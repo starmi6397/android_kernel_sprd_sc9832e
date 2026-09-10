@@ -1,5 +1,7 @@
 package me.weishu.kernelsu.ui.viewmodel
 
+import android.system.OsConstants
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -8,9 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.weishu.kernelsu.Natives
+import me.weishu.kernelsu.R
 import me.weishu.kernelsu.data.repository.SettingsRepository
 import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
+import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.screen.settings.SettingsUiState
 import me.weishu.kernelsu.ui.theme.ColorMode
 
@@ -36,6 +41,7 @@ class SettingsViewModel(
             val enableBlur = repo.enableBlur
             val enableFloatingBottomBar = repo.enableFloatingBottomBar
             val enableFloatingBottomBarBlur = repo.enableFloatingBottomBarBlur
+            val enableNavigationBadge = repo.enableNavigationBadge
             val pageScale = repo.pageScale
             val enableWebDebugging = repo.enableWebDebugging
             val colorStyle = repo.colorStyle
@@ -51,9 +57,16 @@ class SettingsViewModel(
 
             val kernelUmountStatus = repo.getKernelUmountStatus()
             val isKernelUmountEnabled = repo.isKernelUmountEnabled()
+            val selinuxHideStatus = repo.getSelinuxHideStatus()
+            val isSelinuxHideEnabled = repo.isSelinuxHideEnabled()
+            val sulogStatus = repo.getSulogStatus()
+            val isSulogEnabled = repo.getSulogPersistValue() == 1L
+            val adbRootStatus = repo.getAdbRootStatus()
+            val isAdbRootEnabled = repo.getAdbRootPersistValue() == 1L
             val isDefaultUmountModules = repo.isDefaultUmountModules()
             val uiMode = repo.uiMode
             val autoJailbreak = repo.autoJailbreak
+            val useSoftReboot = repo.useSoftReboot
             val isLateLoadMode = Natives.isLateLoadMode
 
             _uiState.update {
@@ -68,6 +81,7 @@ class SettingsViewModel(
                     enableBlur = enableBlur,
                     enableFloatingBottomBar = enableFloatingBottomBar,
                     enableFloatingBottomBarBlur = enableFloatingBottomBarBlur,
+                    enableNavigationBadge = enableNavigationBadge,
                     pageScale = pageScale,
                     enableWebDebugging = enableWebDebugging,
                     colorStyle = colorStyle,
@@ -75,11 +89,18 @@ class SettingsViewModel(
                     suCompatStatus = suCompatStatus,
                     suCompatMode = suCompatMode,
                     isSuEnabled = isSuEnabled,
+                    adbRootStatus = adbRootStatus,
+                    isAdbRootEnabled = isAdbRootEnabled,
                     kernelUmountStatus = kernelUmountStatus,
                     isKernelUmountEnabled = isKernelUmountEnabled,
+                    selinuxHideStatus = selinuxHideStatus,
+                    isSelinuxHideEnabled = isSelinuxHideEnabled,
+                    sulogStatus = sulogStatus,
+                    isSulogEnabled = isSulogEnabled,
                     isDefaultUmountModules = isDefaultUmountModules,
                     isLkmMode = isLkmMode,
                     autoJailbreak = autoJailbreak,
+                    useSoftReboot = useSoftReboot,
                     isLateLoadMode = isLateLoadMode,
                 )
             }
@@ -190,6 +211,11 @@ class SettingsViewModel(
         _uiState.update { it.copy(enableFloatingBottomBarBlur = enabled) }
     }
 
+    fun setEnableNavigationBadge(enabled: Boolean) {
+        repo.enableNavigationBadge = enabled
+        _uiState.update { it.copy(enableNavigationBadge = enabled) }
+    }
+
     fun setPageScale(scale: Float) {
         repo.pageScale = scale
         _uiState.update { it.copy(pageScale = scale) }
@@ -237,9 +263,55 @@ class SettingsViewModel(
         }
     }
 
+    fun setSelinuxHideEnabled(enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val status = repo.setSelinuxHideEnabled(enabled)
+            repo.execKsudFeatureSave()
+            _uiState.update { it.copy(isSelinuxHideEnabled = enabled) }
+            when (status) {
+                0 -> {}
+                -OsConstants.EAGAIN -> {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(ksuApp, R.string.settings_selinux_hide_reboot_required,
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+                else -> {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(ksuApp, ksuApp.getString(R.string.settings_selinux_hide_failed, status),
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+    }
+
     fun setAutoJailbreak(enabled: Boolean) {
         repo.autoJailbreak = enabled
         _uiState.update { it.copy(autoJailbreak = enabled) }
+    }
+
+    fun setUseSoftReboot(enabled: Boolean) {
+        repo.useSoftReboot = enabled
+        _uiState.update { it.copy(useSoftReboot = enabled) }
+    }
+
+    fun setSulogEnabled(enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (repo.setSulogEnabled(enabled)) {
+                repo.execKsudFeatureSave()
+                _uiState.update { it.copy(isSulogEnabled = enabled) }
+            }
+        }
+    }
+
+    fun setAdbRootEnabled(enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (repo.setAdbRootEnabled(enabled)) {
+                repo.execKsudFeatureSave()
+                _uiState.update { it.copy(isAdbRootEnabled = enabled) }
+            }
+        }
     }
 
     fun setDefaultUmountModules(enabled: Boolean) {

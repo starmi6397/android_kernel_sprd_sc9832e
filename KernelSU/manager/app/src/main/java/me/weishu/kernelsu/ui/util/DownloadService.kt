@@ -19,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import me.weishu.kernelsu.R
+import me.weishu.kernelsu.data.repository.SettingsRepositoryImpl
 import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.MainActivity
 import okhttp3.Request
@@ -36,6 +37,7 @@ class DownloadService : Service() {
         const val ACTION_DISMISS_DOWNLOAD = "me.weishu.kernelsu.action.DISMISS_DOWNLOAD"
         const val ACTION_INSTALL_MODULE = "me.weishu.kernelsu.action.INSTALL_MODULE"
         const val EXTRA_URL = "url"
+        const val EXTRA_TOKEN = "token"
         const val EXTRA_FILE_NAME = "fileName"
         const val EXTRA_DOWNLOAD_ID = "downloadId"
         const val EXTRA_MODULE_URI = "moduleUri"
@@ -104,13 +106,11 @@ class DownloadService : Service() {
 
     private fun startDownload(id: Int, url: String, fileName: String) {
         val job = serviceScope.launch {
+            val target = resolveAvailableTarget(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                fileName
+            )
             try {
-                val target = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    fileName
-                )
-                target.parentFile?.mkdirs()
-
                 ksuApp.okhttpClient.newCall(Request.Builder().url(url).build()).execute()
                     .use { resp ->
                         if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
@@ -137,7 +137,7 @@ class DownloadService : Service() {
                                     if (percent - lastNotifiedProgress >= 2 || percent == 100) {
                                         notificationManager.notify(
                                             id,
-                                            buildProgressNotification(id, fileName, percent)
+                                            buildProgressNotification(id, target.name, percent)
                                         )
                                         lastNotifiedProgress = percent
                                     }
@@ -153,7 +153,7 @@ class DownloadService : Service() {
                 notificationManager.cancel(id)
                 notificationManager.notify(
                     COMPLETION_NOTIFICATION_ID_BASE + id,
-                    buildCompletionNotification(id, fileName, uri)
+                    buildCompletionNotification(id, target.name, uri)
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -163,7 +163,7 @@ class DownloadService : Service() {
                 notificationManager.cancel(id)
                 notificationManager.notify(
                     COMPLETION_NOTIFICATION_ID_BASE + id,
-                    buildFailureNotification(fileName)
+                    buildFailureNotification(target.name)
                 )
             } finally {
                 activeJobs.remove(id)
@@ -171,6 +171,29 @@ class DownloadService : Service() {
             }
         }
         activeJobs[id] = job
+    }
+
+    private fun resolveAvailableTarget(
+        directory: File,
+        fileName: String
+    ): File {
+        val dotIndex = fileName.lastIndexOf('.')
+        val baseName = if (dotIndex > 0) fileName.substring(0, dotIndex) else fileName
+        val extension = if (dotIndex > 0) fileName.substring(dotIndex) else ""
+
+        var index = 0
+        while (true) {
+            val candidateName = if (index == 0) {
+                fileName
+            } else {
+                "$baseName ($index)$extension"
+            }
+            val candidate = File(directory, candidateName)
+            if (!candidate.exists()) {
+                return candidate
+            }
+            index++
+        }
     }
 
     private fun buildProgressNotification(
@@ -207,6 +230,7 @@ class DownloadService : Service() {
             action = ACTION_INSTALL_MODULE
             putExtra(EXTRA_MODULE_URI, uri.toString())
             putExtra(EXTRA_DOWNLOAD_ID, id)
+            putExtra(EXTRA_TOKEN, SettingsRepositoryImpl().intentToken)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         val installPendingIntent = PendingIntent.getActivity(
