@@ -32,7 +32,7 @@ static long ksu_sys_setns(int fd, int flags)
 #else
 #define ksu_sys_setns sys_setns
 #define ksys_unshare sys_unshare
-#endif
+#endif // > 4.17
 
 // global mode , need CAP_SYS_ADMIN and CAP_SYS_CHROOT to perform setns
 static void ksu_mnt_ns_global(void)
@@ -60,7 +60,7 @@ static void ksu_mnt_ns_global(void)
 		pwd_path = NULL;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 try_setns:
 
 	rcu_read_lock();
@@ -80,22 +80,21 @@ try_setns:
 		goto out;
 	}
 	struct path ns_path;
-	long ret = (long)ns_get_path(&ns_path, pid1_task, &mntns_operations);
+	long ret = ns_get_path(&ns_path, pid1_task, &mntns_operations);
 	put_task_struct(pid1_task);
 	if (ret) {
 		pr_warn("failed get path for init mount namespace: %ld\n", ret);
 		goto out;
 	}
 #else
-try_setns:
-	;
+try_setns:;
 	// on UL kernels we can try to just feed it with struct path of /proc/1/ns/mnt
 	// we do NOT have ns_get_path. if it works, GOOD. if it doesn't I don't care.
 	struct path ns_path;
 	const struct cred *saved = override_creds(ksu_cred);
 
 	// make sure to LOOKUP_FOLLOW
-	// /proc/1/ns/mnt -> 'mnt:[4026531840]'
+	// /proc/1/ns/mnt -> 'mnt:[505034]'
 	long ret = kern_path("/proc/1/ns/mnt", LOOKUP_FOLLOW, &ns_path);
 	if (ret) {
 		revert_creds(saved);
@@ -105,11 +104,7 @@ try_setns:
 	revert_creds(saved);
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)
 	struct file *ns_file = dentry_open(&ns_path, O_RDONLY, ksu_cred);
-#else
-	struct file *ns_file = dentry_open(ns_path.dentry, ns_path.mnt, O_RDONLY, ksu_cred);
-#endif
 
 	path_put(&ns_path);
 	if (IS_ERR(ns_file)) {
@@ -128,7 +123,7 @@ try_setns:
 	fd_install(fd, ns_file);
 	ret = ksu_sys_setns(fd, CLONE_NEWNS);
 
-	close_fd(fd);
+	ksu_close_fd(fd);
 
 	if (ret) {
 		pr_warn("call setns failed: %ld\n", ret);
@@ -180,11 +175,6 @@ void setup_mount_ns(int32_t ns_mode)
 	if (ns_mode != KSU_NS_GLOBAL && ns_mode != KSU_NS_INDIVIDUAL) {
 		pr_warn("pid: %d ,unknown mount namespace mode: %d\n", current->pid,
 				ns_mode);
-		return;
-	}
-
-	if (!ksu_cred) {
-		pr_err("no ksu cred! skip mnt_ns magic for pid: %d.\n", current->pid);
 		return;
 	}
 
